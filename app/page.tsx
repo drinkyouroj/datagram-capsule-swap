@@ -1,14 +1,15 @@
 'use client';
 
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { useAccount, useConnect, useDisconnect, useBalance } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import { useState, useEffect } from 'react';
 import { formatEther, parseEther } from 'viem';
-import { Loader2, Search, Wallet, ArrowRight, Copy, Check } from 'lucide-react';
+import { Loader2, Search, Wallet, ArrowRight, Copy, Check, AlertTriangle } from 'lucide-react';
 import capsuleValuesData from '../data/capsule_values.json';
-const capsuleValues = capsuleValuesData as Record<string, string>;
 import { CAPSULE_SWAP_ABI } from '@/lib/abis';
 import { useWriteContract } from 'wagmi';
+
+const capsuleValues = capsuleValuesData as Record<string, string>;
 
 const CAPSULE_CONTRACT = '0xC9Af289cd84864876b5337E3ef092B205f47d65F';
 const SWAP_CONTRACT = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
@@ -22,9 +23,13 @@ export default function Home() {
   const [lookupResult, setLookupResult] = useState<{ value: string, payout: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const { data: contractBalance } = useBalance({
+    address: SWAP_CONTRACT,
+  });
+
   const handleLookup = () => {
     if (!lookupId) return;
-    const valStr = (capsuleValues as any)[lookupId];
+    const valStr = capsuleValues[lookupId];
     if (valStr) {
       const total = parseEther(valStr);
       const payout = (total * 25n) / 100n;
@@ -43,6 +48,10 @@ export default function Home() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const isLiquiditySufficient = lookupResult && contractBalance 
+    ? contractBalance.value >= parseEther(lookupResult.payout)
+    : true;
 
   return (
     <main className="min-h-screen bg-black text-white selection:bg-blue-500/30">
@@ -115,6 +124,16 @@ export default function Home() {
       {/* Results / Options Section */}
       {lookupResult && (
         <div className="max-w-4xl mx-auto px-6 mb-24 animate-in fade-in slide-in-from-bottom-8 duration-500">
+          
+          {!isLiquiditySufficient && (
+            <div className="mb-6 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex items-center gap-3 text-yellow-500">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm font-medium">
+                The contract currently has insufficient liquidity for this swap. Please try again later or contact support.
+              </p>
+            </div>
+          )}
+
           <div className="bg-gradient-to-br from-gray-900 to-black border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
             {/* Header */}
             <div className="p-8 border-b border-white/10 bg-white/5 text-center">
@@ -133,7 +152,7 @@ export default function Home() {
             </div>
 
             {/* Options Grid */}
-            <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10">
+            <div className={`grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10 ${!isLiquiditySufficient ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
               
               {/* Option 1: Web Swap */}
               <div className="p-8 flex flex-col h-full">
@@ -144,10 +163,11 @@ export default function Home() {
                 </div>
                 <div className="mt-auto">
                   {isConnected ? (
-                    <CapsuleCard capsule={{ id: lookupId, value: lookupResult.value, payout: lookupResult.payout }} swapper={SWAP_CONTRACT} />
+                    <CapsuleCard capsule={{ id: lookupId, value: lookupResult.value, payout: lookupResult.payout }} swapper={SWAP_CONTRACT} disabled={!isLiquiditySufficient} />
                   ) : (
                     <button 
                       onClick={() => connect({ connector: injected() })}
+                      disabled={!isLiquiditySufficient}
                       className="w-full bg-white text-black py-4 rounded-xl font-bold hover:bg-gray-200 transition"
                     >
                       Connect Wallet to Swap
@@ -168,7 +188,7 @@ export default function Home() {
                   <p className="text-xs text-gray-500 mb-2 uppercase font-bold">Send Capsule To:</p>
                   <div className="flex items-center gap-2 mb-2">
                     <code className="flex-1 text-sm text-purple-300 truncate">{TREASURY_ADDRESS}</code>
-                    <button onClick={copyTreasury} className="text-gray-400 hover:text-white">
+                    <button onClick={copyTreasury} disabled={!isLiquiditySufficient} className="text-gray-400 hover:text-white">
                       {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
@@ -191,9 +211,6 @@ export default function Home() {
     </main>
   );
 }
-
-// ... Keep existing ActivityFeed and CapsuleCard components ...
-// Re-adding them below to ensure the file is complete
 
 function ActivityFeed() {
   const [activities, setActivities] = useState<any[]>([]);
@@ -229,7 +246,7 @@ function ActivityFeed() {
           <div className="text-right">
             <span className="block text-green-400 font-mono font-bold">+ {formatEther(BigInt(act.amount || 0))} DGRAM</span>
             <a 
-              href={`https://explorer.datagram.network/tx/${act.nonce}`} // Assuming nonce maps to tx or we store tx hash
+              href={`https://explorer.datagram.network/tx/${act.nonce}`} 
               target="_blank" 
               rel="noreferrer"
               className="text-xs text-gray-600 hover:text-gray-400 underline"
@@ -243,12 +260,12 @@ function ActivityFeed() {
   );
 }
 
-function CapsuleCard({ capsule, swapper }: { capsule: { id: string, value: string, payout: string }, swapper: `0x${string}` }) {
+function CapsuleCard({ capsule, swapper, disabled }: { capsule: { id: string, value: string, payout: string }, swapper: `0x${string}`, disabled?: boolean }) {
   const { writeContract, isPending } = useWriteContract();
   const { address } = useAccount();
 
   const handleSwap = async () => {
-    if (!address) return;
+    if (!address || disabled) return;
     
     try {
       const res = await fetch('/api/sign', {
@@ -281,7 +298,7 @@ function CapsuleCard({ capsule, swapper }: { capsule: { id: string, value: strin
   return (
     <button 
       onClick={handleSwap}
-      disabled={isPending}
+      disabled={isPending || disabled}
       className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition flex justify-center items-center gap-2 shadow-lg shadow-blue-900/20"
     >
       {isPending ? <Loader2 className="animate-spin w-5 h-5" /> : 'Swap Now'}
