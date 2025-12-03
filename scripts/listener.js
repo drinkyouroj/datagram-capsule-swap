@@ -75,6 +75,72 @@ console.log("🚀 Listener Bot Started");
 console.log(`Watching for transfers to Treasury: ${TREASURY_ADDRESS}`);
 console.log(`Swap Contract: ${SWAP_CONTRACT_ADDRESS}`);
 
+// Helper to process a single event
+const processEvent = async (from, to, tokenId) => {
+  if (to.toLowerCase() === TREASURY_ADDRESS.toLowerCase()) {
+    console.log(`\n📦 Capsule Received! ID: ${tokenId} | From: ${from}`);
+    
+    try {
+      // 1. Get Value
+      const valStr = capsuleValues[tokenId.toString()];
+      if (!valStr) {
+        console.log(`❌ Capsule #${tokenId} value not found in list. Skipping.`);
+        return;
+      }
+
+      const totalValue = parseEther(valStr);
+      const payout = (totalValue * 25n) / 100n;
+      
+      console.log(`💰 Value: ${valStr} | Payout: ${formatEther(payout)} DGRAM`);
+
+      // 2. Execute Payout
+      console.log("⏳ Sending Payout Transaction...");
+      const hash = await wallet.writeContract({
+        address: SWAP_CONTRACT_ADDRESS,
+        abi: SWAP_PAYOUT_ABI,
+        functionName: 'payoutDirect',
+        args: [from, payout, tokenId]
+      });
+
+      console.log(`✅ Payout Sent! Tx: ${hash}`);
+      
+    } catch (err) {
+      if (err.message.includes("Capsule already processed")) {
+        console.log("⚠️ Capsule already paid out.");
+      } else {
+        console.error("❌ Payout Failed:", err);
+      }
+    }
+  }
+};
+
+// 1. Poll for recent past events (last 100 blocks) on startup
+const pollRecentEvents = async () => {
+  try {
+    const blockNumber = await client.getBlockNumber();
+    console.log(`Checking past blocks from ${blockNumber - 100n} to ${blockNumber}...`);
+    
+    const logs = await client.getContractEvents({
+      address: CAPSULE_NFT_ADDRESS,
+      abi: ERC721_TRANSFER_ABI,
+      eventName: 'Transfer',
+      fromBlock: blockNumber - 100n,
+      toBlock: blockNumber
+    });
+
+    for (const log of logs) {
+      const { from, to, tokenId } = log.args;
+      await processEvent(from, to, tokenId);
+    }
+  } catch (e) {
+    console.error("Error polling past events:", e);
+  }
+};
+
+// Run initial poll
+pollRecentEvents();
+
+// 2. Start Watcher
 client.watchContractEvent({
   address: CAPSULE_NFT_ADDRESS,
   abi: ERC721_TRANSFER_ABI,
@@ -82,42 +148,7 @@ client.watchContractEvent({
   onLogs: async (logs) => {
     for (const log of logs) {
       const { from, to, tokenId } = log.args;
-      
-      if (to.toLowerCase() === TREASURY_ADDRESS.toLowerCase()) {
-        console.log(`\n📦 Capsule Received! ID: ${tokenId} | From: ${from}`);
-        
-        try {
-          // 1. Get Value
-          const valStr = capsuleValues[tokenId.toString()];
-          if (!valStr) {
-            console.log(`❌ Capsule #${tokenId} value not found in list. Skipping.`);
-            continue;
-          }
-
-          const totalValue = parseEther(valStr);
-          const payout = (totalValue * 25n) / 100n;
-          
-          console.log(`💰 Value: ${valStr} | Payout: ${formatEther(payout)} DGRAM`);
-
-          // 2. Execute Payout
-          console.log("⏳ Sending Payout Transaction...");
-          const hash = await wallet.writeContract({
-            address: SWAP_CONTRACT_ADDRESS,
-            abi: SWAP_PAYOUT_ABI,
-            functionName: 'payoutDirect',
-            args: [from, payout, tokenId]
-          });
-
-          console.log(`✅ Payout Sent! Tx: ${hash}`);
-          
-        } catch (err) {
-          if (err.message.includes("Capsule already processed")) {
-            console.log("⚠️ Capsule already paid out.");
-          } else {
-            console.error("❌ Payout Failed:", err);
-          }
-        }
-      }
+      await processEvent(from, to, tokenId);
     }
   }
 });
