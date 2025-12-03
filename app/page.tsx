@@ -5,7 +5,7 @@ import { injected } from 'wagmi/connectors';
 import { useState, useEffect } from 'react';
 import { formatEther, parseEther } from 'viem';
 import { Loader2, Search, Wallet, ArrowRight, Copy, Check, AlertTriangle } from 'lucide-react';
-import capsuleValuesData from '../data/capsule_values.json';
+import capsuleValuesData from './capsule_values.json';
 import { CAPSULE_SWAP_ABI } from '@/lib/abis';
 import { useWriteContract } from 'wagmi';
 

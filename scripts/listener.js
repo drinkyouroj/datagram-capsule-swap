@@ -34,7 +34,7 @@ if (!TREASURY_ADDRESS) {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const valuesPath = path.join(__dirname, '../data/capsule_values.json');
+const valuesPath = path.join(__dirname, '../app/capsule_values.json');
 const capsuleValues = JSON.parse(fs.readFileSync(valuesPath, 'utf8'));
 
 // ABI Minimal
