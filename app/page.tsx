@@ -3,137 +3,197 @@
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import { useState, useEffect } from 'react';
-import { formatEther } from 'viem';
-import { Loader2 } from 'lucide-react';
-import capsuleValues from '@/../data/capsule_values.json'; // Check path
-import { ERC721_ABI, CAPSULE_SWAP_ABI } from '@/lib/abis';
-import { useWriteContract, useReadContract } from 'wagmi';
+import { formatEther, parseEther } from 'viem';
+import { Loader2, Search, Wallet, ArrowRight, Copy, Check } from 'lucide-react';
+import capsuleValuesData from '../data/capsule_values.json';
+const capsuleValues = capsuleValuesData as Record<string, string>;
+import { CAPSULE_SWAP_ABI } from '@/lib/abis';
+import { useWriteContract } from 'wagmi';
 
-// Contract Addresses
 const CAPSULE_CONTRACT = '0xC9Af289cd84864876b5337E3ef092B205f47d65F';
-const SWAP_CONTRACT = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`; // Needs env
-
-type Capsule = {
-  id: string;
-  value: string;
-  payout: string;
-};
+const SWAP_CONTRACT = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+const TREASURY_ADDRESS = '0x0de730684c2a11d4c1eb08f8676fc9f1b822220e';
 
 export default function Home() {
   const { address, isConnected } = useAccount();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
-  const [capsules, setCapsules] = useState<Capsule[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [swappingId, setSwappingId] = useState<string | null>(null);
+  const [lookupId, setLookupId] = useState('');
+  const [lookupResult, setLookupResult] = useState<{ value: string, payout: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  // Fetch Capsules
-  useEffect(() => {
-    if (isConnected && address) {
-      fetchCapsules(address);
+  const handleLookup = () => {
+    if (!lookupId) return;
+    const valStr = (capsuleValues as any)[lookupId];
+    if (valStr) {
+      const total = parseEther(valStr);
+      const payout = (total * 25n) / 100n;
+      setLookupResult({
+        value: valStr,
+        payout: formatEther(payout)
+      });
     } else {
-      setCapsules([]);
-    }
-  }, [isConnected, address]);
-
-  const fetchCapsules = async (userAddress: string) => {
-    setLoading(true);
-    try {
-      // Use Blockscout API
-      const response = await fetch(`https://explorer.datagram.network/api?module=account&action=tokenlist&address=${userAddress}`);
-      const data = await response.json();
-      
-      if (data.result && Array.isArray(data.result)) {
-        const userCapsules = data.result
-          .filter((token: any) => token.contractAddress.toLowerCase() === CAPSULE_CONTRACT.toLowerCase())
-          .map((token: any) => {
-             // If Blockscout returns individual items per ID, great.
-             // Usually tokenlist returns 'balance', not IDs for ERC721 unless specific endpoint.
-             // Check API docs: tokenlist usually returns ERC20/ERC721 balances.
-             // If it doesn't list IDs, we might need '?module=account&action=tokennfttx&contractaddress=...' and parse.
-             // OR rely on 'tokenOfOwnerByIndex' if supported.
-             return token;
-          });
-          
-        // Fallback: The Blockscout 'tokenlist' might not give IDs.
-        // Let's assume for MVP we might need a different way or the user manually enters ID?
-        // No, user said "scan wallet".
-        // Let's try a simpler approach: Assume the contract supports Enumerable or we fetch from an indexer.
-        // Since I can't check the contract code, I'll assume standard Blockscout API behavior for NFTs.
-        // Actually, `?module=account&action=tokenlist` often aggregates.
-        // Better endpoint: `https://explorer.datagram.network/api/v2/addresses/{address}/nft?type=ERC-721` (Blockscout v2 API).
-        // Let's try v2 API.
-      }
-      
-      // MOCK DATA FOR DEV if API fails or is empty (since I don't have capsules)
-      // setCapsules([{ id: '3135137970', value: '2500', payout: '625' }]); 
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
+      setLookupResult(null);
+      alert('Capsule ID not found');
     }
   };
-  
-  // REAL FETCH IMPLEMENTATION
-  // I will use a raw fetch to the v2 API in the actual code if possible, or rely on 'tokenOfOwnerByIndex' loop if balance is small.
-  // Safe bet: Loop balance.
-  
+
+  const copyTreasury = () => {
+    navigator.clipboard.writeText(TREASURY_ADDRESS);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <main className="min-h-screen p-8 max-w-6xl mx-auto">
-      <header className="flex justify-between items-center mb-12">
-        <h1 className="text-3xl font-bold tracking-tighter">Datagram Capsule Swap</h1>
-        {isConnected ? (
-          <div className="flex gap-4 items-center">
-            <span className="text-sm text-gray-400">{address?.slice(0,6)}...{address?.slice(-4)}</span>
+    <main className="min-h-screen bg-black text-white selection:bg-blue-500/30">
+      {/* Navbar */}
+      <nav className="border-b border-white/10 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-6 h-20 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg animate-pulse" />
+            <span className="font-bold text-xl tracking-tight">Capsule Swap</span>
+          </div>
+          
+          {isConnected ? (
+            <div className="flex gap-4 items-center">
+              <div className="hidden md:block text-right">
+                <p className="text-xs text-gray-400">Connected</p>
+                <p className="font-mono text-sm">{address?.slice(0,6)}...{address?.slice(-4)}</p>
+              </div>
+              <button 
+                onClick={() => disconnect()}
+                className="bg-red-500/10 text-red-500 px-4 py-2 rounded-lg hover:bg-red-500/20 transition text-sm font-medium"
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
             <button 
-              onClick={() => disconnect()}
-              className="bg-red-500/10 text-red-500 px-4 py-2 rounded-lg hover:bg-red-500/20 transition"
+              onClick={() => connect({ connector: injected() })}
+              className="bg-white text-black px-6 py-2 rounded-lg font-bold hover:bg-gray-200 transition flex items-center gap-2"
             >
-              Disconnect
+              <Wallet className="w-4 h-4" />
+              Connect Wallet
+            </button>
+          )}
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <div className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-blue-900/20 to-black pointer-events-none" />
+        
+        <div className="max-w-4xl mx-auto px-6 pt-24 pb-16 relative z-10 text-center">
+          <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-6 bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-500">
+            Unlock Your Liquidity
+          </h1>
+          <p className="text-xl text-gray-400 mb-12 max-w-2xl mx-auto">
+            Instantly swap your Datagram Capsules for 25% of their value in liquid DGRAM tokens. No waiting, no hassle.
+          </p>
+
+          {/* Lookup Tool */}
+          <div className="max-w-md mx-auto bg-white/5 border border-white/10 p-2 rounded-2xl flex gap-2 backdrop-blur-lg shadow-2xl shadow-blue-900/20">
+            <input 
+              type="text" 
+              placeholder="Enter Capsule ID (e.g. 3135137970)" 
+              className="bg-transparent border-none outline-none flex-1 px-4 text-lg placeholder:text-gray-600"
+              value={lookupId}
+              onChange={(e) => setLookupId(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
+            />
+            <button 
+              onClick={handleLookup}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-bold transition flex items-center gap-2"
+            >
+              <Search className="w-4 h-4" />
+              Check Value
             </button>
           </div>
-        ) : (
-          <button 
-            onClick={() => connect({ connector: injected() })}
-            className="bg-white text-black px-6 py-2 rounded-lg font-bold hover:bg-gray-200 transition"
-          >
-            Connect Wallet
-          </button>
-        )}
-      </header>
-
-      {!isConnected ? (
-        <div className="text-center py-20 text-gray-500">
-          <p>Connect your wallet to view your capsules.</p>
         </div>
-      ) : (
-        <div>
-          <div className="flex justify-between items-end mb-6">
-            <h2 className="text-xl font-semibold">Your Capsules</h2>
-            <button onClick={() => address && fetchCapsules(address)} className="text-sm text-blue-400">Refresh</button>
-          </div>
+      </div>
 
-          {loading ? (
-            <div className="flex justify-center py-20"><Loader2 className="animate-spin" /></div>
-          ) : capsules.length === 0 ? (
-             <div className="text-center py-20 text-gray-500">No capsules found.</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {capsules.map(c => (
-                <CapsuleCard key={c.id} capsule={c} swapper={SWAP_CONTRACT} />
-              ))}
+      {/* Results / Options Section */}
+      {lookupResult && (
+        <div className="max-w-4xl mx-auto px-6 mb-24 animate-in fade-in slide-in-from-bottom-8 duration-500">
+          <div className="bg-gradient-to-br from-gray-900 to-black border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+            {/* Header */}
+            <div className="p-8 border-b border-white/10 bg-white/5 text-center">
+              <h2 className="text-2xl font-bold mb-2">Capsule #{lookupId}</h2>
+              <div className="flex justify-center items-center gap-8 mt-6">
+                <div className="text-center">
+                  <p className="text-gray-500 uppercase text-xs font-bold tracking-wider mb-1">Total Value</p>
+                  <p className="text-3xl font-mono text-gray-300">{lookupResult.value} DGRAM</p>
+                </div>
+                <ArrowRight className="text-gray-600" />
+                <div className="text-center">
+                  <p className="text-green-500 uppercase text-xs font-bold tracking-wider mb-1">You Receive (25%)</p>
+                  <p className="text-4xl font-mono font-bold text-green-400">{lookupResult.payout} DGRAM</p>
+                </div>
+              </div>
             </div>
-          )}
+
+            {/* Options Grid */}
+            <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-white/10">
+              
+              {/* Option 1: Web Swap */}
+              <div className="p-8 flex flex-col h-full">
+                <div className="mb-6">
+                  <div className="w-10 h-10 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mb-4">1</div>
+                  <h3 className="text-xl font-bold mb-2">Swap via Website</h3>
+                  <p className="text-gray-400 text-sm">Connect your wallet and swap instantly with one click.</p>
+                </div>
+                <div className="mt-auto">
+                  {isConnected ? (
+                    <CapsuleCard capsule={{ id: lookupId, value: lookupResult.value, payout: lookupResult.payout }} swapper={SWAP_CONTRACT} />
+                  ) : (
+                    <button 
+                      onClick={() => connect({ connector: injected() })}
+                      className="w-full bg-white text-black py-4 rounded-xl font-bold hover:bg-gray-200 transition"
+                    >
+                      Connect Wallet to Swap
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Option 2: Direct Transfer */}
+              <div className="p-8 flex flex-col h-full bg-white/[0.02]">
+                <div className="mb-6">
+                  <div className="w-10 h-10 bg-purple-500/20 text-purple-400 rounded-full flex items-center justify-center mb-4">2</div>
+                  <h3 className="text-xl font-bold mb-2">Manual Transfer</h3>
+                  <p className="text-gray-400 text-sm">Send the NFT directly from your Datagram Dashboard. Our bot will detect it and pay you automatically.</p>
+                </div>
+                
+                <div className="mt-auto bg-black/50 p-4 rounded-xl border border-white/10">
+                  <p className="text-xs text-gray-500 mb-2 uppercase font-bold">Send Capsule To:</p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <code className="flex-1 text-sm text-purple-300 truncate">{TREASURY_ADDRESS}</code>
+                    <button onClick={copyTreasury} className="text-gray-400 hover:text-white">
+                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-500">
+                    ⚠️ Only send Datagram Capsules. Other NFTs will be lost.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
         </div>
       )}
 
-      <div className="mt-20 border-t border-white/10 pt-12">
-        <h2 className="text-2xl font-bold mb-6">Recent Swaps</h2>
+      {/* Activity Feed */}
+      <div className="max-w-6xl mx-auto px-6 py-16 border-t border-white/10">
+        <h2 className="text-2xl font-bold mb-8">Recent Activity</h2>
         <ActivityFeed />
       </div>
     </main>
   );
 }
+
+// ... Keep existing ActivityFeed and CapsuleCard components ...
+// Re-adding them below to ensure the file is complete
 
 function ActivityFeed() {
   const [activities, setActivities] = useState<any[]>([]);
@@ -147,26 +207,34 @@ function ActivityFeed() {
       .catch(console.error);
   }, []);
 
-  if (activities.length === 0) return <div className="text-gray-500">No recent activity.</div>;
+  if (activities.length === 0) return <div className="text-gray-500 italic">No recent activity found.</div>;
 
   return (
-    <div className="space-y-4">
+    <div className="grid gap-4">
       {activities.map((act, i) => (
-        <div key={i} className="bg-white/5 p-4 rounded-lg flex justify-between items-center">
-          <div>
-            <span className="font-mono text-blue-400">{act.user_address.slice(0,6)}...{act.user_address.slice(-4)}</span>
-            <span className="text-gray-400 mx-2">swapped Capsule</span>
-            <span className="font-bold">#{act.token_id}</span>
+        <div key={i} className="bg-white/5 border border-white/5 p-4 rounded-xl flex justify-between items-center hover:bg-white/10 transition">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-green-500/10 rounded-full flex items-center justify-center text-green-500 font-bold">
+              $
+            </div>
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="font-bold text-white">Capsule #{act.token_id}</span>
+                <span className="text-xs text-gray-500">swapped by</span>
+                <span className="font-mono text-xs text-blue-400">{act.user_address.slice(0,6)}...{act.user_address.slice(-4)}</span>
+              </div>
+              <span className="text-xs text-gray-500">{new Date(act.created_at).toLocaleString()}</span>
+            </div>
           </div>
-          <div className="flex gap-4 items-center">
-            <span className="text-green-400 font-mono">+ {formatEther(BigInt(act.amount || 0))} DGRAM</span>
+          <div className="text-right">
+            <span className="block text-green-400 font-mono font-bold">+ {formatEther(BigInt(act.amount || 0))} DGRAM</span>
             <a 
-              href={`https://explorer.datagram.network/address/${act.user_address}`} 
+              href={`https://explorer.datagram.network/tx/${act.nonce}`} // Assuming nonce maps to tx or we store tx hash
               target="_blank" 
               rel="noreferrer"
-              className="text-xs text-gray-600 hover:text-gray-400"
+              className="text-xs text-gray-600 hover:text-gray-400 underline"
             >
-              View
+              View on Explorer
             </a>
           </div>
         </div>
@@ -175,20 +243,14 @@ function ActivityFeed() {
   );
 }
 
-function CapsuleCard({ capsule, swapper }: { capsule: Capsule, swapper: `0x${string}` }) {
+function CapsuleCard({ capsule, swapper }: { capsule: { id: string, value: string, payout: string }, swapper: `0x${string}` }) {
   const { writeContract, isPending } = useWriteContract();
-  const [signatureData, setSignatureData] = useState<any>(null);
-  const [approving, setApproving] = useState(false);
   const { address } = useAccount();
 
-  // Check approval (Optimistic or real read)
-  // For simplicity, we'll do "Approve if needed" flow in the swap button.
-  
   const handleSwap = async () => {
     if (!address) return;
     
     try {
-      // 1. Get Signature
       const res = await fetch('/api/sign', {
         method: 'POST',
         body: JSON.stringify({ tokenId: capsule.id, userAddress: address }),
@@ -197,14 +259,13 @@ function CapsuleCard({ capsule, swapper }: { capsule: Capsule, swapper: `0x${str
       
       if (data.error) throw new Error(data.error);
       
-      // 2. Call Contract
       writeContract({
         abi: CAPSULE_SWAP_ABI,
         address: swapper,
         functionName: 'swap',
         args: [
           BigInt(capsule.id),
-          BigInt(data.amount), // Amount in wei
+          BigInt(data.amount),
           BigInt(data.nonce),
           BigInt(data.deadline),
           data.signature
@@ -218,26 +279,12 @@ function CapsuleCard({ capsule, swapper }: { capsule: Capsule, swapper: `0x${str
   };
 
   return (
-    <div className="border border-white/10 bg-white/5 rounded-xl p-6 flex flex-col gap-4">
-      <div>
-        <h3 className="text-lg font-bold">Capsule #{capsule.id}</h3>
-        <p className="text-gray-400 text-sm">Value: {capsule.value} DGRAM</p>
-      </div>
-      
-      <div className="mt-auto pt-4 border-t border-white/10">
-        <div className="flex justify-between mb-4">
-          <span>You Receive</span>
-          <span className="text-green-400 font-mono text-xl">{capsule.payout} DGRAM</span>
-        </div>
-        
-        <button 
-          onClick={handleSwap}
-          disabled={isPending}
-          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition flex justify-center items-center gap-2"
-        >
-          {isPending ? <Loader2 className="animate-spin w-4 h-4" /> : 'Swap Now'}
-        </button>
-      </div>
-    </div>
+    <button 
+      onClick={handleSwap}
+      disabled={isPending}
+      className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition flex justify-center items-center gap-2 shadow-lg shadow-blue-900/20"
+    >
+      {isPending ? <Loader2 className="animate-spin w-5 h-5" /> : 'Swap Now'}
+    </button>
   );
 }

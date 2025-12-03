@@ -30,28 +30,38 @@ This project uses a secure 4-wallet architecture to separate concerns and maximi
 *   **Funds Needed:** **YES.** You must send DGRAM to this address to fund the swaps.
 *   **Action:** Monitor its balance in the Admin UI. If it runs out, users cannot swap.
 
-## Deployment Steps
+## Deployment Guide
 
-1.  **Deploy Contract:**
-    *   Deploy `contracts/CapsuleSwap.sol` using Wallet A.
-    *   Constructor Args:
-        *   `_capsuleContract`: `0xC9Af289cd84864876b5337E3ef092B205f47d65F`
-        *   `_signer`: Address of Wallet B.
-        *   `_treasury`: Address of Wallet C.
+1.  **Setup Environment Variables:**
+    Create `.env.local` and add the following:
 
-2.  **Fund Contract:**
-    *   Send DGRAM from Wallet A to the Deployed Contract Address.
+    ```bash
+    # Deployment & Admin
+    DEPLOYER_PRIVATE_KEY=0x...  # Wallet A Private Key (Has DGRAM for gas)
+    SIGNER_ADDRESS=0x...        # Wallet B Public Address
+    TREASURY_ADDRESS=0x...      # Wallet C Public Address
 
-3.  **Configure App:**
-    *   Create `.env.local`:
-        ```bash
-        NEXT_PUBLIC_SUPABASE_URL=...
-        SUPABASE_SERVICE_ROLE_KEY=...
-        ADMIN_PRIVATE_KEY=... (Private Key of Wallet B)
-        NEXT_PUBLIC_CONTRACT_ADDRESS=... (Address of Deployed Contract)
-        ```
+    # Backend App
+    ADMIN_PRIVATE_KEY=0x...     # Wallet B Private Key (For signing swaps)
+    NEXT_PUBLIC_CONTRACT_ADDRESS= # Leave empty until deployed
+    
+    # Supabase
+    NEXT_PUBLIC_SUPABASE_URL=...
+    SUPABASE_SERVICE_ROLE_KEY=...
+    ```
 
-4.  **Run:**
+2.  **Deploy Contract:**
+    Run the deployment script:
+    ```bash
+    npx hardhat run scripts/deploy.js --network datagram
+    ```
+
+3.  **Finalize Config:**
+    *   Copy the "CapsuleSwap deployed to: 0x..." address from the terminal.
+    *   Update `NEXT_PUBLIC_CONTRACT_ADDRESS` in your `.env.local`.
+    *   **Fund the Contract:** Send DGRAM from Wallet A to this new Contract Address.
+
+4.  **Run App:**
     ```bash
     npm run dev
     ```

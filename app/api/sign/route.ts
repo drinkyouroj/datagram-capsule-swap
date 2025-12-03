@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { createPublicClient, http, createWalletClient, parseEther, keccak256, encodePacked, toBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains'; // We'll override this for Datagram
-import capsuleValues from '@/../data/capsule_values.json';
+import capsuleValuesData from '../../data/capsule_values.json';
+const capsuleValues = capsuleValuesData as Record<string, string>;
 import { supabase } from '@/lib/supabase';
 
 const DATAGRAM_CHAIN = {

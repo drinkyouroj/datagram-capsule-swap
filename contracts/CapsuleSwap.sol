@@ -15,6 +15,7 @@ contract CapsuleSwap {
     bool public maintenanceMode = false;
 
     mapping(uint256 => bool) public usedNonces;
+    mapping(uint256 => bool) public processedCapsules; // Track paid tokenIds
 
     event Swapped(address indexed user, uint256 indexed tokenId, uint256 amount);
     event TreasuryUpdated(address newTreasury);
@@ -47,6 +48,7 @@ contract CapsuleSwap {
     ) external notMaintenance {
         require(block.timestamp <= deadline, "Expired");
         require(!usedNonces[nonce], "Nonce used");
+        require(!processedCapsules[tokenId], "Capsule already processed");
         
         // Verify Signature
         bytes32 message = keccak256(abi.encodePacked(tokenId, amount, msg.sender, nonce, deadline, address(this)));
@@ -55,16 +57,27 @@ contract CapsuleSwap {
         require(recoveredSigner == signer, "Invalid signature");
 
         usedNonces[nonce] = true;
+        processedCapsules[tokenId] = true;
 
         // Transfer Capsule to Treasury
         capsuleContract.transferFrom(msg.sender, treasury, tokenId);
 
         // Transfer DGRAM to User
-        require(address(this).balance >= amount, "Insufficient liquidity");
-        (bool sent, ) = payable(msg.sender).call{value: amount}("");
-        require(sent, "Failed to send DGRAM");
+        _payout(msg.sender, amount, tokenId);
+    }
 
-        emit Swapped(msg.sender, tokenId, amount);
+    // New function for the Listener Bot
+    function payoutDirect(address recipient, uint256 amount, uint256 tokenId) external onlyOwner notMaintenance {
+        require(!processedCapsules[tokenId], "Capsule already processed");
+        processedCapsules[tokenId] = true;
+        _payout(recipient, amount, tokenId);
+    }
+
+    function _payout(address recipient, uint256 amount, uint256 tokenId) internal {
+        require(address(this).balance >= amount, "Insufficient liquidity");
+        (bool sent, ) = payable(recipient).call{value: amount}("");
+        require(sent, "Failed to send DGRAM");
+        emit Swapped(recipient, tokenId, amount);
     }
 
     function recoverSigner(bytes32 _ethSignedMessageHash, bytes memory _signature) internal pure returns (address) {
@@ -107,4 +120,3 @@ contract CapsuleSwap {
 
     receive() external payable {}
 }
-
