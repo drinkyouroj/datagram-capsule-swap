@@ -32,7 +32,7 @@ export default function Home() {
     const valStr = capsuleValues[lookupId];
     if (valStr) {
       const total = parseEther(valStr);
-      const payout = (total * 25n) / 100n;
+      const payout = (total * 20n) / 100n;
       setLookupResult({
         value: valStr,
         payout: formatEther(payout)
@@ -97,7 +97,7 @@ export default function Home() {
             Unlock Your Liquidity
           </h1>
           <p className="text-xl text-gray-400 mb-12 max-w-2xl mx-auto">
-            Instantly swap your Datagram Capsules for 25% of their value in liquid DGRAM tokens. No waiting, no hassle.
+            Instantly swap your Datagram Capsules for 20% of their value in liquid DGRAM tokens. No waiting, no hassle.
           </p>
 
           {/* Lookup Tool */}
@@ -145,7 +145,7 @@ export default function Home() {
                 </div>
                 <ArrowRight className="text-gray-600" />
                 <div className="text-center">
-                  <p className="text-green-500 uppercase text-xs font-bold tracking-wider mb-1">You Receive (25%)</p>
+                  <p className="text-green-500 uppercase text-xs font-bold tracking-wider mb-1">You Receive (20%)</p>
                   <p className="text-4xl font-mono font-bold text-green-400">{lookupResult.payout} DGRAM</p>
                 </div>
               </div>

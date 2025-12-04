@@ -1,6 +1,6 @@
 # Datagram Capsule Swap
 
-A decentralized application (dApp) allowing users to swap their Datagram Capsule NFTs for 25% of their value in DGRAM tokens.
+A decentralized application (dApp) allowing users to swap their Datagram Capsule NFTs for 20% of their value in DGRAM tokens.
 
 ## Architecture & Wallet Setup
 

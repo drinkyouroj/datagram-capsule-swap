@@ -4,8 +4,10 @@ import { config as dotenvConfig } from "dotenv";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createClient } from '@supabase/supabase-js';
 
-dotenvConfig({ path: ".env.local" });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenvConfig({ path: path.resolve(__dirname, '../.env.local') });
 
 // Config
 const CHAIN_ID = 968;
@@ -32,8 +34,17 @@ if (!TREASURY_ADDRESS) {
   console.error("❌ Error: TREASURY_ADDRESS is undefined.");
   process.exit(1);
 }
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  console.error("❌ Error: Supabase credentials missing.");
+  process.exit(1);
+}
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// Removed duplicate __dirname definition
 const valuesPath = path.join(__dirname, '../app/capsule_values.json');
 const capsuleValues = JSON.parse(fs.readFileSync(valuesPath, 'utf8'));
 
@@ -65,6 +76,19 @@ const SWAP_PAYOUT_ABI = [
   }
 ];
 
+const SWAPPED_EVENT_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'user', type: 'address' },
+      { indexed: true, name: 'tokenId', type: 'uint256' },
+      { indexed: false, name: 'amount', type: 'uint256' }
+    ],
+    name: 'Swapped',
+    type: 'event'
+  }
+];
+
 // Clients
 const transport = http(RPC_URL);
 const client = createPublicClient({ transport });
@@ -73,23 +97,30 @@ const wallet = createWalletClient({ account, chain: { id: CHAIN_ID, rpcUrls: { d
 
 console.log("🚀 Listener Bot Started");
 console.log(`Watching for transfers to Treasury: ${TREASURY_ADDRESS}`);
-console.log(`Swap Contract: ${SWAP_CONTRACT_ADDRESS}`);
+console.log(`Watching for Swaps on Contract: ${SWAP_CONTRACT_ADDRESS}`);
 
-// Helper to process a single event
-const processEvent = async (from, to, tokenId) => {
+// --- Logic 1: Detect Transfers and Payout ---
+
+const processTransfer = async (from, to, tokenId) => {
   if (to.toLowerCase() === TREASURY_ADDRESS.toLowerCase()) {
     console.log(`\n📦 Capsule Received! ID: ${tokenId} | From: ${from}`);
     
     try {
       // 1. Get Value
-      const valStr = capsuleValues[tokenId.toString()];
+      let valStr = capsuleValues[tokenId.toString()];
+      
+      // Retry with padding if not found (e.g. 474... -> 0474...)
+      if (!valStr) {
+        valStr = capsuleValues[tokenId.toString().padStart(10, '0')];
+      }
+
       if (!valStr) {
         console.log(`❌ Capsule #${tokenId} value not found in list. Skipping.`);
         return;
       }
 
       const totalValue = parseEther(valStr);
-      const payout = (totalValue * 25n) / 100n;
+      const payout = (totalValue * 20n) / 100n;
       
       console.log(`💰 Value: ${valStr} | Payout: ${formatEther(payout)} DGRAM`);
 
@@ -114,13 +145,55 @@ const processEvent = async (from, to, tokenId) => {
   }
 };
 
-// 1. Poll for recent past events (last 100 blocks) on startup
+// --- Logic 2: Detect Swaps and Log to Supabase ---
+
+const processSwapLog = async (user, tokenId, amount, transactionHash) => {
+  console.log(`\n📝 Recording Swap: ID ${tokenId} | User ${user} | Tx ${transactionHash}`);
+  
+  try {
+    // Check if already exists
+    const { data: existing } = await supabase
+      .from('transactions')
+      .select('id')
+      .eq('token_id', tokenId.toString())
+      .single();
+
+    if (existing) {
+      console.log("ℹ️  Transaction already recorded in DB.");
+      return;
+    }
+
+    // Insert
+    const { error } = await supabase
+      .from('transactions')
+      .insert({
+        user_address: user,
+        token_id: tokenId.toString(),
+        amount: amount.toString(),
+        status: 'success',
+        nonce: transactionHash, // Storing TX hash in nonce field for compatibility with existing UI
+        created_at: new Date().toISOString(),
+      });
+
+    if (error) {
+      console.error("❌ Database Insert Error:", error.message);
+    } else {
+      console.log("✅ Database Updated!");
+    }
+  } catch (err) {
+    console.error("❌ DB Error:", err);
+  }
+};
+
+// --- Startup Poll ---
+
 const pollRecentEvents = async () => {
   try {
     const blockNumber = await client.getBlockNumber();
     console.log(`Checking past blocks from ${blockNumber - 100n} to ${blockNumber}...`);
     
-    const logs = await client.getContractEvents({
+    // 1. Check Transfers (for Payouts)
+    const transferLogs = await client.getContractEvents({
       address: CAPSULE_NFT_ADDRESS,
       abi: ERC721_TRANSFER_ABI,
       eventName: 'Transfer',
@@ -128,10 +201,25 @@ const pollRecentEvents = async () => {
       toBlock: blockNumber
     });
 
-    for (const log of logs) {
+    for (const log of transferLogs) {
       const { from, to, tokenId } = log.args;
-      await processEvent(from, to, tokenId);
+      await processTransfer(from, to, tokenId);
     }
+
+    // 2. Check Swaps (for DB)
+    const swapLogs = await client.getContractEvents({
+      address: SWAP_CONTRACT_ADDRESS,
+      abi: SWAPPED_EVENT_ABI,
+      eventName: 'Swapped',
+      fromBlock: blockNumber - 100n,
+      toBlock: blockNumber
+    });
+
+    for (const log of swapLogs) {
+      const { user, tokenId, amount } = log.args;
+      await processSwapLog(user, tokenId, amount, log.transactionHash);
+    }
+
   } catch (e) {
     console.error("Error polling past events:", e);
   }
@@ -140,7 +228,9 @@ const pollRecentEvents = async () => {
 // Run initial poll
 pollRecentEvents();
 
-// 2. Start Watcher
+// --- Start Watchers ---
+
+// 1. Watch Transfers
 client.watchContractEvent({
   address: CAPSULE_NFT_ADDRESS,
   abi: ERC721_TRANSFER_ABI,
@@ -148,8 +238,22 @@ client.watchContractEvent({
   onLogs: async (logs) => {
     for (const log of logs) {
       const { from, to, tokenId } = log.args;
-      await processEvent(from, to, tokenId);
+      await processTransfer(from, to, tokenId);
     }
   }
 });
+
+// 2. Watch Swaps
+client.watchContractEvent({
+  address: SWAP_CONTRACT_ADDRESS,
+  abi: SWAPPED_EVENT_ABI,
+  eventName: 'Swapped',
+  onLogs: async (logs) => {
+    for (const log of logs) {
+      const { user, tokenId, amount } = log.args;
+      await processSwapLog(user, tokenId, amount, log.transactionHash);
+    }
+  }
+});
+
 

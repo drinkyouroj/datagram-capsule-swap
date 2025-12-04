@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     // The site says "DGRAM $1,807". If value is "2500", it's likely 2500 DGRAM.
     // So parseEther("2500") is correct.
 
-    const payoutAmount = (totalValue * 25n) / 100n; // 25%
+    const payoutAmount = (totalValue * 20n) / 100n; // 20%
 
     // 2. Generate Signature
     const account = privateKeyToAccount(ADMIN_PRIVATE_KEY);
@@ -90,7 +90,9 @@ export async function POST(request: Request) {
       }
     });
 
-    // 3. Log to Supabase (Pending)
+    // 3. Log to Supabase (Pending) - DISABLED
+    // We now rely on the listener bot to catch the 'Swapped' event for the source of truth.
+    /*
     await supabase.from('transactions').insert({
       user_address: userAddress,
       token_id: tokenId,
@@ -99,6 +101,7 @@ export async function POST(request: Request) {
       nonce: nonce.toString(),
       created_at: new Date().toISOString(),
     });
+    */
 
     return NextResponse.json({
       amount: payoutAmount.toString(),

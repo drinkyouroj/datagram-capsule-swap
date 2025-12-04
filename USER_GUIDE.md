@@ -14,7 +14,7 @@ Before sending anything, verify how much DGRAM you will receive and ensure the c
 
 1.  **Find your Capsule ID:**
     *   Log in to your [Datagram Dashboard](https://datagram.network).
-    *   Go to the **Rewards** or **Capsules** tab.
+    *   Go to the **Rewards** page and select the **Capsules** tab.
     *   Look for the **Capsule ID** (e.g., `3130187969`) next to your capsule.
 
 2.  **Check Value on Capsule Swap:**
@@ -22,7 +22,7 @@ Before sending anything, verify how much DGRAM you will receive and ensure the c
     *   Enter your **Capsule ID** in the search box and click **"Check Value"**.
     *   You will see two numbers:
         *   **Total Value:** The full vesting value of the capsule.
-        *   **You Receive (25%):** The amount of liquid DGRAM you get immediately.
+        *   **You Receive (20%):** The amount of liquid DGRAM you get immediately.
 
 3.  **Verify Liquidity:**
     *   Look at the result card.
